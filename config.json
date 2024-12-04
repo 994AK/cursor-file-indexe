@@ -1,0 +1,22 @@
+{
+  "project_path": "/Users/yangguanghua/Desktop/web/外包项目/AI-Task-Management-System/client/src/pages/agents/AgentList.tsx",
+  "alias_mappings": {
+    "@": "src",
+    "@components": "src/components",
+    "@utils": "src/utils"
+  },
+  "ignore_patterns": [
+    "node_modules",
+    "dist",
+    "build",
+    ".git",
+    "__pycache__",
+    ".DS_Store",
+    ".history",
+    "coverage",
+    ".next",
+    ".nuxt"
+  ],
+  "analyze_mode": "deep",
+  "max_depth": 5
+}
