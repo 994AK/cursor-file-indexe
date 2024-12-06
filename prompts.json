@@ -1,0 +1,44 @@
+{
+  "commit_types": {
+    "feat": {
+      "title": "新功能开发分析",
+      "prompt": "作为一个资深前端开发专家，请分析这个新功能的实现。重点关注：\n1. 组件结构和职责划分\n2. 状态管理方案\n3. 数据流设计\n4. 性能优化点\n5. 可能的扩展点",
+      "focus": ["components", "state_management", "data_flow", "performance"]
+    },
+    "fix": {
+      "title": "问题修复分析",
+      "prompt": "作为一个经验丰富的调试专家，请分析这个修复实现。重点关注：\n1. 问题的根本原因\n2. 修复的完整性\n3. 相关依赖影响\n4. 潜在的其他问题\n5. 预防措施建议",
+      "focus": ["bug_patterns", "dependencies", "side_effects", "prevention"]
+    },
+    "refactor": {
+      "title": "代码重构分析",
+      "prompt": "作为一个代码重构专家，请分析这次重构。重点关注：\n1. 重构的必要性\n2. 代码质量改进\n3. 架构优化点\n4. 可维护性提升\n5. 重构风险评估",
+      "focus": ["code_quality", "architecture", "maintainability", "risks"]
+    },
+    "style": {
+      "title": "样式改进分析",
+      "prompt": "作为一个UI/UX专家，请分析这次样式改进。重点关注：\n1. 视觉一致性\n2. 响应式设计\n3. 主题系统\n4. 可复用性\n5. 性能影响",
+      "focus": ["visual_consistency", "responsiveness", "theming", "reusability"]
+    },
+    "perf": {
+      "title": "性能优化分析",
+      "prompt": "作为一个前端性能优化专家，请分析这次优化。重点关注：\n1. 性能瓶颈识别\n2. 优化方案评估\n3. 收益量化\n4. 潜在影响\n5. 监控建议",
+      "focus": ["bottlenecks", "optimization", "metrics", "monitoring"]
+    },
+    "test": {
+      "title": "测试用例分析",
+      "prompt": "作为一个测试开发专家，请分析这次测试实现。重点关注：\n1. 测试覆盖度\n2. 测试场景完整性\n3. 边界条件处理\n4. 测试可维护性\n5. 自动化建议",
+      "focus": ["coverage", "scenarios", "edge_cases", "maintenance"]
+    },
+    "docs": {
+      "title": "文档更新分析",
+      "prompt": "作为一个技术文档专家，请分析这次文档更新。重点关注：\n1. 文档完整性\n2. 表达准确性\n3. 示例有效性\n4. 结构合理性\n5. 维护建议",
+      "focus": ["completeness", "accuracy", "examples", "structure"]
+    },
+    "chore": {
+      "title": "项目维护分析",
+      "prompt": "作为一个项目维护专家，请分析这次维护工作。重点关注：\n1. 维护必要性\n2. 影响范围\n3. 后续计划\n4. 维护成本\n5. 长期收益",
+      "focus": ["necessity", "impact", "planning", "cost_benefit"]
+    }
+  }
+} 
