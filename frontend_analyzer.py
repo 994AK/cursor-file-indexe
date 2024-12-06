@@ -8,13 +8,14 @@ import os
 import re
 import json
 from pathlib import Path
-from typing import Dict, List, Set, Optional, Union, DefaultDict
+from typing import Dict, List, Set, Optional, Union, DefaultDict, Tuple
 from dataclasses import dataclass, field
 from rich.console import Console
 from rich.tree import Tree
 from collections import defaultdict
 import fnmatch
 from functools import lru_cache
+import hashlib
 
 @dataclass
 class SearchIndex:
@@ -31,7 +32,60 @@ class Config:
     ignore_patterns: Set[str]
     analyze_mode: str = "deep"  # 'deep' or 'shallow'
     max_depth: int = 5
-    index_extensions: Set[str] = field(default_factory=lambda: {'.vue', '.js', '.ts', '.jsx', '.tsx'})
+    index_extensions: Dict[str, Dict[str, Union[List[str], List[str]]]] = field(default_factory=lambda: {
+        "vue": {
+            "extensions": [".vue"],
+            "patterns": [
+                r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                r'require\([\'"]([^\'"]+)[\'"]\)',
+                r'import\([\'"]([^\'"]+)[\'"]\)',
+                r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
+            ]
+        },
+        "typescript": {
+            "extensions": [".ts", ".tsx"],
+            "patterns": [
+                r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
+            ]
+        },
+        "javascript": {
+            "extensions": [".js", ".jsx"],
+            "patterns": [
+                r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                r'require\([\'"]([^\'"]+)[\'"]\)'
+            ]
+        }
+    })
+
+    @staticmethod
+    def default_index_extensions():
+        """Default index extensions configuration"""
+        return {
+            "vue": {
+                "extensions": [".vue"],
+                "patterns": [
+                    r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                    r'require\([\'"]([^\'"]+)[\'"]\)',
+                    r'import\([\'"]([^\'"]+)[\'"]\)',
+                    r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
+                ]
+            },
+            "typescript": {
+                "extensions": [".ts", ".tsx"],
+                "patterns": [
+                    r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                    r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
+                ]
+            },
+            "javascript": {
+                "extensions": [".js", ".jsx"],
+                "patterns": [
+                    r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                    r'require\([\'"]([^\'"]+)[\'"]\)'
+                ]
+            }
+        }
 
     @classmethod
     def load(cls, config_path: Union[str, Path] = "config.json") -> 'Config':
@@ -45,7 +99,7 @@ class Config:
                     ignore_patterns=set(data.get('ignore_patterns', [])),
                     analyze_mode=data.get('analyze_mode', 'deep'),
                     max_depth=data.get('max_depth', 5),
-                    index_extensions=set(data.get('index_extensions', ['.vue', '.js', '.ts', '.jsx', '.tsx']))
+                    index_extensions=data.get('index_extensions', cls.default_index_extensions())
                 )
         except FileNotFoundError:
             console = Console()
@@ -79,6 +133,82 @@ class FileInfo:
     dependencies: DependencyInfo = field(default_factory=DependencyInfo)
     analyzed: bool = False
 
+@dataclass
+class MerkleNode:
+    """Merkle树节点"""
+    hash: str
+    type: str  # 'file', 'component', 'api', 'hook', 'util', 'external'
+    name: str
+    children: List['MerkleNode'] = field(default_factory=list)
+    content: Optional[str] = None
+
+class DependencyMerkleTree:
+    """依赖关系的Merkle树实现"""
+    
+    def __init__(self):
+        self.nodes: Dict[str, MerkleNode] = {}
+    
+    def _calculate_hash(self, content: str) -> str:
+        """计算内容的哈希值"""
+        return hashlib.sha256(content.encode()).hexdigest()[:8]  # 使用短哈希以提高可读性
+    
+    def _create_node(self, name: str, type: str, content: Optional[str] = None) -> MerkleNode:
+        """创建或获取节点"""
+        if name in self.nodes:
+            return self.nodes[name]
+            
+        node_content = content or name
+        node_hash = self._calculate_hash(f"{type}:{node_content}")
+        node = MerkleNode(hash=node_hash, type=type, name=name, content=content)
+        self.nodes[name] = node
+        return node
+    
+    def build_from_dependencies(self, deps: DependencyInfo, file_name: str) -> MerkleNode:
+        """从依赖信息构建Merkle树"""
+        root = self._create_node(file_name, 'file')
+        
+        # 添加组件依赖
+        for comp_name in deps.components:
+            comp_node = self._create_node(comp_name, 'component')
+            root.children.append(comp_node)
+        
+        # 添加API依赖
+        for api_name in deps.api:
+            api_node = self._create_node(api_name, 'api')
+            root.children.append(api_node)
+        
+        # 添加Hooks依赖
+        for hook_name in deps.hooks:
+            hook_node = self._create_node(hook_name, 'hook')
+            root.children.append(hook_node)
+        
+        # 添加工具依赖
+        for util_name in deps.utils:
+            util_node = self._create_node(util_name, 'util')
+            root.children.append(util_node)
+        
+        # 添加外部依赖
+        for ext_name in deps.external:
+            ext_node = self._create_node(ext_name, 'external')
+            root.children.append(ext_node)
+        
+        return root
+    
+    def generate_ai_readable_format(self, root: MerkleNode, indent: int = 0) -> str:
+        """生成AI友好的可读格式"""
+        result = []
+        prefix = "  " * indent
+        
+        # 添加节点信息
+        node_info = f"{prefix}[{root.type}:{root.hash}] {root.name}"
+        result.append(node_info)
+        
+        # 递归处理子节点
+        for child in root.children:
+            result.append(self.generate_ai_readable_format(child, indent + 1))
+        
+        return "\n".join(result)
+
 class FrontendAnalyzer:
     def __init__(self, config: Config):
         self.config = config
@@ -86,22 +216,22 @@ class FrontendAnalyzer:
         self.dependency_graph: DefaultDict[str, Set[str]] = defaultdict(set)
         self.console = Console()
         self.search_index = SearchIndex()
+        self.merkle_tree = DependencyMerkleTree()
         
-        # Common frontend file patterns
-        self.file_patterns = {
-            'component': r'\.(jsx|tsx|vue)$',
-            'script': r'\.(js|ts)$',
-            'style': r'\.(css|scss|less|sass)$',
-            'type': r'\.d\.ts$'
-        }
-        
-        # Import patterns
-        self.import_patterns = {
-            'es6': r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
-            'require': r'require\([\'"]([^\'"]+)[\'"]\)',
-            'dynamic': r'import\([\'"]([^\'"]+)[\'"]\)',
-            'type': r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
-        }
+        # 从配置文件加载导入模式
+        self.import_patterns = {}
+        if hasattr(config, 'index_extensions'):
+            for lang, lang_config in config.index_extensions.items():
+                for pattern in lang_config['patterns']:
+                    self.import_patterns[f"{lang}_{pattern[:10]}"] = pattern
+        else:
+            # 默认的导入模式作为后备
+            self.import_patterns = {
+                'es6': r'import\s+(?:{[^}]*}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"]([^\'"]+)[\'"]',
+                'require': r'require\([\'"]([^\'"]+)[\'"]\)',
+                'dynamic': r'import\([\'"]([^\'"]+)[\'"]\)',
+                'type': r'import\s+type\s+{[^}]*}\s+from\s+[\'"]([^\'"]+)[\'"]'
+            }
 
     def _should_ignore(self, path: Path) -> bool:
         """Check if the file should be ignored"""
@@ -109,16 +239,13 @@ class FrontendAnalyzer:
 
     def _determine_file_type(self, file_path: Path) -> Optional[str]:
         """Determine the type of the file based on its path and extension"""
-        path_str = str(file_path)
+        suffix = file_path.suffix
         
-        if re.search(self.file_patterns['component'], path_str):
-            return 'component'
-        elif re.search(self.file_patterns['type'], path_str):
-            return 'type'
-        elif re.search(self.file_patterns['script'], path_str):
-            return 'script'
-        elif re.search(self.file_patterns['style'], path_str):
-            return 'style'
+        # 从配置中获取文件类型
+        for lang, lang_config in self.config.index_extensions.items():
+            if suffix in lang_config['extensions']:
+                return lang
+                
         return None
 
     def _extract_dependencies(self, content: str, deps: DependencyInfo):
@@ -177,6 +304,12 @@ class FrontendAnalyzer:
         project_root = self.config.project_path.parent.parent.parent
         self.console.print("[yellow]Building search index...[/yellow]")
         
+        # 获取所有支持的扩展名
+        supported_extensions = set()
+        if hasattr(self.config, 'index_extensions'):
+            for lang_config in self.config.index_extensions.values():
+                supported_extensions.update(lang_config['extensions'])
+        
         for file_path in project_root.rglob('*'):
             if not file_path.is_file() or self._should_ignore(file_path):
                 continue
@@ -188,15 +321,45 @@ class FrontendAnalyzer:
                 self.search_index.file_index[file_path.name].add(relative_path)
                 
                 # 索引扩展名
-                if file_path.suffix in self.config.index_extensions:
+                if file_path.suffix in supported_extensions:
                     self.search_index.extension_index[file_path.suffix].add(relative_path)
                     
                     # 只为特定扩展名的文件建立导入索引
                     content = file_path.read_text(encoding='utf-8')
-                    for pattern in self.import_patterns.values():
+                    
+                    # 根据文件扩展名选择对应的导入模式
+                    current_patterns = []
+                    if hasattr(self.config, 'index_extensions'):
+                        for lang_config in self.config.index_extensions.values():
+                            if file_path.suffix in lang_config['extensions']:
+                                current_patterns.extend(lang_config['patterns'])
+                    else:
+                        current_patterns = list(self.import_patterns.values())
+                    
+                    for pattern in current_patterns:
                         for match in re.finditer(pattern, content):
                             import_path = match.group(1)
+                            # 添加原始导入路径
                             self.search_index.import_index[import_path].add(relative_path)
+                            
+                            # 处理相对路径，添加额外的索引项
+                            if import_path.startswith('./') or import_path.startswith('../'):
+                                file_dir = file_path.parent
+                                try:
+                                    resolved_path = (file_dir / import_path).resolve()
+                                    if resolved_path.exists():
+                                        rel_resolved = str(resolved_path.relative_to(project_root))
+                                        self.search_index.import_index[rel_resolved].add(relative_path)
+                                except:
+                                    pass
+                            
+                            # 处理别名路径，添加额外的索引项
+                            if import_path.startswith('@'):
+                                for alias, path in self.config.alias_mappings.items():
+                                    if import_path.startswith(alias):
+                                        normalized_path = import_path.replace(alias, path, 1)
+                                        self.search_index.import_index[normalized_path].add(relative_path)
+                                        break
                             
             except Exception as e:
                 self.console.print(f"[red]Error indexing {file_path}: {e}[/red]")
@@ -247,20 +410,44 @@ class FrontendAnalyzer:
         project_root = self.config.project_path.parent.parent.parent
         current_dir = self.config.project_path.parent
         
-        # 1. 检查别名映射
-        if import_path.startswith('@'):
-            for alias, path in self.config.alias_mappings.items():
-                if import_path.startswith(alias):
-                    import_path = import_path.replace(alias, path, 1)
-                    break
+        # 1. 处理相对路径
+        if import_path.startswith('./') or import_path.startswith('../'):
+            # 从当前目录开始解析相对路径
+            resolved_path = (current_dir / import_path).resolve()
+            if resolved_path.exists():
+                return resolved_path
+            
+            # 尝试添加不同的扩展名
+            for ext in ['.tsx', '.jsx', '.ts', '.js', '.vue', '/index.tsx', '/index.jsx', '/index.ts', '/index.js', '/index.vue']:
+                test_path = resolved_path.with_suffix(ext) if not ext.startswith('/') else Path(str(resolved_path) + ext)
+                if test_path.exists():
+                    return test_path
         
-        # 2. 检查导入索引
+        # 2. 处理别名路径
+        if import_path.startswith('@/'):
+            # 如果配置中有 "@": "src" 的映射
+            if "@" in self.config.alias_mappings:
+                # 直接将 @/ 替换为 src/
+                normalized_path = import_path.replace('@/', f"{self.config.alias_mappings['@']}/", 1)
+                full_path = project_root / normalized_path
+                
+                # 检查路径是否存在
+                if full_path.exists():
+                    return full_path
+                
+                # 尝试不同的扩展名
+                for ext in ['.tsx', '.jsx', '.ts', '.js', '.vue', '/index.tsx', '/index.jsx', '/index.ts', '/index.js', '/index.vue']:
+                    test_path = full_path.with_suffix(ext) if not ext.startswith('/') else Path(str(full_path) + ext)
+                    if test_path.exists():
+                        return test_path
+        
+        # 3. 检查导入索引
         if import_path in self.search_index.import_index:
             paths = self.search_index.import_index[import_path]
             if paths:
                 return project_root / next(iter(paths))
         
-        # 3. 智能查找
+        # 4. 智能查找
         base_name = os.path.basename(import_path)
         if base_name:
             # 移除可能的扩展名
@@ -269,14 +456,17 @@ class FrontendAnalyzer:
             if found_path:
                 return found_path
         
-        # 4. 尝试不同的扩展名
-        extensions = ['.tsx', '.jsx', '.ts', '.js', '.vue', '/index.tsx', '/index.jsx', '/index.ts', '/index.js']
+        # 5. 尝试不同的扩展名
         base_path = project_root / import_path.lstrip('/')
-        
-        for ext in extensions:
+        for ext in ['.tsx', '.jsx', '.ts', '.js', '.vue', '/index.tsx', '/index.jsx', '/index.ts', '/index.js', '/index.vue']:
             full_path = base_path.with_suffix(ext) if not ext.startswith('/') else Path(str(base_path) + ext)
             if full_path.exists():
                 return full_path
+            
+            # 额外检查相对于当前目录的路径
+            current_full_path = (current_dir / import_path).with_suffix(ext) if not ext.startswith('/') else Path(str(current_dir / import_path) + ext)
+            if current_full_path.exists():
+                return current_full_path
         
         return None
 
@@ -407,54 +597,97 @@ class FrontendAnalyzer:
             target_file = Path(self.config.project_path)
             if target_file.is_file():
                 rel_path = target_file.relative_to(target_file.parent.parent.parent)
-                self.console.print(f"\n[bold yellow]正在分析文件: [green]@{rel_path}[/green][/bold yellow]\n")
+                self.console.print(f"\n[bold cyan]═══════════════════════════════════════[/bold cyan]")
+                self.console.print(f"[bold yellow]文件依赖分析报告[/bold yellow]")
+                self.console.print(f"[bold cyan]═══════════════════════════════════════[/bold cyan]")
+                self.console.print(f"\n[bold green]目标文件:[/bold green] @{rel_path}\n")
+
+                # 生成Merkle树
+                merkle_root = None
+                for file_path, file_info in self.files.items():
+                    if str(rel_path) in file_path:
+                        merkle_root = self.merkle_tree.build_from_dependencies(file_info.dependencies, file_path)
+                        break
+
+                if merkle_root:
+                    self.console.print("\n[bold yellow]AI快速阅读格式 (Merkle树)[/bold yellow]")
+                    self.console.print("[cyan]" + "─" * 50 + "[/cyan]")
+                    ai_readable = self.merkle_tree.generate_ai_readable_format(merkle_root)
+                    self.console.print(ai_readable)
+                    self.console.print("[cyan]" + "─" * 50 + "[/cyan]\n")
+
         except Exception as e:
             self.console.print(f"[red]错误: {e}[/red]")
             return
 
-        def print_component_tree(deps: DependencyInfo, indent: int = 0):
+        def print_component_tree(deps: DependencyInfo, indent: int = 0, printed_components: Set[str] = None):
             """递归打印组件依赖树"""
+            if printed_components is None:
+                printed_components = set()
+                
             for comp_path, comp_dep in deps.components.items():
+                if comp_path in printed_components:
+                    continue
+                    
                 prefix = "  " * indent + ("└── " if indent > 0 else "")
                 self.console.print(f"{prefix}[green]{comp_path}[/green]")
+                printed_components.add(comp_path)
+                
                 if comp_path in self.files:
                     nested_deps = self.files[comp_path].dependencies
-                    print_component_tree(nested_deps, indent + 1)
+                    print_component_tree(nested_deps, indent + 1, printed_components)
 
-        # 只处理有依赖的文件
+        # 处理每个文件的依赖
         for file_path, file_info in self.files.items():
             deps = file_info.dependencies
             
+            # 打印分隔线
+            self.console.print("\n[bold cyan]───────────────────────────────────[/bold cyan]")
+            
+            # 组件依赖
             if deps.components:
-                self.console.print("[green]组件依赖树:[/green]")
+                self.console.print("\n[bold green]组件依赖[/bold green]")
                 print_component_tree(deps)
             
+            # API依赖
             if deps.api:
-                self.console.print("\n[magenta]接口依赖:[/magenta]")
+                self.console.print("\n[bold magenta]API 依赖[/bold magenta]")
                 for api in sorted(deps.api):
-                    self.console.print(f"  {api}")
-                    
+                    self.console.print(f"  • {api}")
+            
+            # 类型依赖
             if deps.types:
-                self.console.print("\n[blue]类型依赖:[/blue]")
+                self.console.print("\n[bold blue]类型依赖[/bold blue]")
                 for type_dep in sorted(deps.types):
-                    self.console.print(f"  {type_dep}")
-                    
+                    self.console.print(f"  • {type_dep}")
+            
+            # Hooks依赖
+            if deps.hooks:
+                self.console.print("\n[bold yellow]Hooks 依赖[/bold yellow]")
+                for hook in sorted(deps.hooks):
+                    self.console.print(f"  • {hook}")
+            
+            # 工具依赖
             if deps.utils:
-                self.console.print("\n[cyan]工具依赖:[/cyan]")
+                self.console.print("\n[bold cyan]工具依赖[/bold cyan]")
                 for util in sorted(deps.utils):
-                    self.console.print(f"  {util}")
-                    
+                    self.console.print(f"  • {util}")
+            
+            # 外部依赖
             if deps.external:
-                self.console.print("\n[red]外部依赖:[/red]")
+                self.console.print("\n[bold red]外部依赖[/bold red]")
                 for ext in sorted(deps.external):
-                    self.console.print(f"  {ext}")
+                    self.console.print(f"  • {ext}")
 
-            # 显示循环依赖
+            # 循环依赖检查
             circular_deps = self._find_circular_dependencies(file_path)
             if circular_deps:
-                self.console.print("\n[red bold]⚠️ 循环依赖警告:[/red bold]")
+                self.console.print("\n[bold red]⚠️  循环依赖警告[/bold red]")
                 for cycle in circular_deps:
-                    self.console.print(f"  {' -> '.join(cycle)}")
+                    self.console.print(f"  • {' → '.join(cycle)}")
+            
+            # 打印底部分隔线
+            self.console.print("\n[bold cyan]═══════════════════════════════════════[/bold cyan]")
 
 def main():
     """Main entry point"""

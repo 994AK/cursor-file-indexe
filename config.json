@@ -1,9 +1,7 @@
 {
   "project_path": "/Users/yangguanghua/Desktop/web/外包项目/AI-Task-Management-System/client/src/pages/students/studentsList.tsx",
   "alias_mappings": {
-    "@": "src",
-    "@components": "src/components",
-    "@utils": "src/utils"
+    "@": "src"
   },
   "ignore_patterns": [
     "node_modules",
@@ -18,5 +16,30 @@
     ".nuxt"
   ],
   "analyze_mode": "deep",
-  "max_depth": 10
+  "max_depth": 10,
+  "index_extensions": {
+    "vue": {
+      "extensions": [".vue"],
+      "patterns": [
+        "import\\s+(?:{[^}]*}|\\*\\s+as\\s+\\w+|\\w+)\\s+from\\s+['\"]([^'\"]+)['\"]",
+        "require\\(['\"]([^'\"]+)['\"]\\)",
+        "import\\(['\"]([^'\"]+)['\"]\\)",
+        "import\\s+type\\s+{[^}]*}\\s+from\\s+['\"]([^'\"]+)['\"]"
+      ]
+    },
+    "typescript": {
+      "extensions": [".ts", ".tsx"],
+      "patterns": [
+        "import\\s+(?:{[^}]*}|\\*\\s+as\\s+\\w+|\\w+)\\s+from\\s+['\"]([^'\"]+)['\"]",
+        "import\\s+type\\s+{[^}]*}\\s+from\\s+['\"]([^'\"]+)['\"]"
+      ]
+    },
+    "javascript": {
+      "extensions": [".js", ".jsx"],
+      "patterns": [
+        "import\\s+(?:{[^}]*}|\\*\\s+as\\s+\\w+|\\w+)\\s+from\\s+['\"]([^'\"]+)['\"]",
+        "require\\(['\"]([^'\"]+)['\"]\\)"
+      ]
+    }
+  }
 }
