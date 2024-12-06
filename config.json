@@ -1,5 +1,5 @@
 {
-  "project_path": "/Users/yangguanghua/Desktop/web/外包项目/AI-Task-Management-System/client/src/pages/agents/AgentList.tsx",
+  "project_path": "/Users/yangguanghua/Desktop/web/外包项目/AI-Task-Management-System/client/src/pages/students/studentsList.tsx",
   "alias_mappings": {
     "@": "src",
     "@components": "src/components",
@@ -18,5 +18,5 @@
     ".nuxt"
   ],
   "analyze_mode": "deep",
-  "max_depth": 5
+  "max_depth": 10
 }

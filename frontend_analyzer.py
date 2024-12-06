@@ -61,7 +61,7 @@ class Config:
 @dataclass
 class DependencyInfo:
     """Stores dependency information for a file"""
-    components: Set[str] = field(default_factory=set)
+    components: Dict[str, 'DependencyInfo'] = field(default_factory=dict)  # Changed from Set to Dict for nested deps
     hooks: Set[str] = field(default_factory=set)
     utils: Set[str] = field(default_factory=set)
     types: Set[str] = field(default_factory=set)
@@ -137,7 +137,7 @@ class FrontendAnalyzer:
             if len(parts) > 1:
                 category = parts[1]  # Get the category after @/
                 if category == 'components':
-                    deps.components.add(import_path)
+                    deps.components[import_path] = DependencyInfo(depth=deps.depth + 1, parent=import_path)
                 elif category == 'hooks':
                     deps.hooks.add(import_path)
                 elif category == 'utils':
@@ -155,7 +155,7 @@ class FrontendAnalyzer:
 
         # Handle relative imports and other cases
         if 'components' in import_path:
-            deps.components.add(import_path)
+            deps.components[import_path] = DependencyInfo(depth=deps.depth + 1, parent=import_path)
         elif 'hooks' in import_path:
             deps.hooks.add(import_path)
         elif 'utils' in import_path:
@@ -334,7 +334,7 @@ class FrontendAnalyzer:
         deps = file_info.dependencies
 
         # Analyze component dependencies
-        for comp_path in deps.components:
+        for comp_path, comp_dep in deps.components.items():
             resolved_path = self._resolve_dependency_path(comp_path)
             if resolved_path:
                 self.dependency_graph[file_key].add(str(resolved_path))
@@ -412,14 +412,22 @@ class FrontendAnalyzer:
             self.console.print(f"[red]错误: {e}[/red]")
             return
 
+        def print_component_tree(deps: DependencyInfo, indent: int = 0):
+            """递归打印组件依赖树"""
+            for comp_path, comp_dep in deps.components.items():
+                prefix = "  " * indent + ("└── " if indent > 0 else "")
+                self.console.print(f"{prefix}[green]{comp_path}[/green]")
+                if comp_path in self.files:
+                    nested_deps = self.files[comp_path].dependencies
+                    print_component_tree(nested_deps, indent + 1)
+
         # 只处理有依赖的文件
         for file_path, file_info in self.files.items():
             deps = file_info.dependencies
             
             if deps.components:
-                self.console.print("[green]组件依赖:[/green]")
-                for comp in sorted(deps.components):
-                    self.console.print(f"  {comp}")
+                self.console.print("[green]组件依赖树:[/green]")
+                print_component_tree(deps)
             
             if deps.api:
                 self.console.print("\n[magenta]接口依赖:[/magenta]")
